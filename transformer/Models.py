@@ -162,8 +162,13 @@ class Transformer(nn.Module):
 
 
     def forward(self, src_seq, trg_seq):
-
+        
+        # 将进行attention权值矩阵计算的时候填上缺省值处的词语所产生的权重忽略,以去除噪声.
         src_mask = get_pad_mask(src_seq, self.src_pad_idx)
+        
+        # 在生成单词时, 对于计算第i个单词的attention矩阵, 我们只能将前i个单词的信息提供给它.
+        # 要将i + 1之后的单词所产生的信息忽略, 这样才合理.
+        # 所以通过 & 来构造一个下三角矩阵, 在忽略i + 1之后单词的同时, 也只关注语句中的非缺省信息.
         trg_mask = get_pad_mask(trg_seq, self.trg_pad_idx) & get_subsequent_mask(trg_seq)
 
         enc_output, *_ = self.encoder(src_seq, src_mask)
