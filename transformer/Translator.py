@@ -117,7 +117,12 @@ class Translator(nn.Module):
                 # -- check if all beams contain eos
                 if (eos_locs.sum(1) > 0).sum(0).item() == beam_size:
                     # TODO: Try different terminate conditions.
-                    # 这里除以seq_lens的目的还不知道
+                    """
+                    这里除以seq_lens的原因是: 越长的句子更占优势, 因为它是多个词语的加和, 
+                    这里我们想要挑一个质量最好的句子, 就需要将scores除去句子的长度, 
+                    得到一个类似于平均值的数来表示整个句子的质量.
+                    但是这里alpha的值为什么选择成0.7, 尚且不知道.
+                    """
                     _, ans_idx = scores.div(seq_lens.float() ** alpha).max(0)
                     ans_idx = ans_idx.item()
                     break
