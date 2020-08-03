@@ -104,10 +104,20 @@ class Translator(nn.Module):
                 # -- locate the eos in the generated sequences
                 eos_locs = gen_seq == trg_eos_idx   
                 # -- replace the eos with its position for the length penalty use
+                """
+                len_map == [[1, 2, ..., max_seq_len]]
+                len_map的shape虽然只是(1, max_seq_len), 但会进行广播变成(beam_size, max_seq_len).
+                也就是[[1, 2, ..., max_seq_len] * beam_size].
+                这里1到max_seq_len的数字其实相当于一个刻度, 标记了长度, 是一个很巧妙的编程想法.
+                这里将eos_locs中的True和False反位, 结合masked_fill()也就是将不是eos标志的地方填充成max_seq_len.
+                最后, len_map中将变成 [[max_seq_len, max_seq_len, ..., len, ..., max_seq_len] * beam_size]
+                通过.min(1), 可以得出已经结束了的句子的真实长度.
+                """
                 seq_lens, _ = self.len_map.masked_fill(~eos_locs, max_seq_len).min(1)
                 # -- check if all beams contain eos
                 if (eos_locs.sum(1) > 0).sum(0).item() == beam_size:
                     # TODO: Try different terminate conditions.
+                    # 这里除以seq_lens的目的还不知道
                     _, ans_idx = scores.div(seq_lens.float() ** alpha).max(0)
                     ans_idx = ans_idx.item()
                     break
