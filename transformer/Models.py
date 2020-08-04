@@ -154,6 +154,26 @@ class Transformer(nn.Module):
         self.x_logit_scale = 1.
         if trg_emb_prj_weight_sharing:
             # Share the weight between target word embedding & last dense layer
+            """
+            首先说一下为什么可以直接这样share权重矩阵, 再说一下自己对于这样share的理解:
+                1. 这里trg_word_prj.weight 它原本的权重矩阵的shape是和trg_word_emb.weight一样的,
+                我们如果以nn.Linear(a, b)这样的形式去声明, 那么它生成的权重矩阵是(b, a)这样的shape,
+                这一点在pytorch的源代码中有所体现, 我们在使用全联接层进行维度的投影映射时, 
+                本质上是 xA.T这样的矩阵运算, 这里x指的是我们输入的张量, A是我们在linear中生成的权重矩阵.
+                而我们如果以nn.Embedding(a, b)这样的形式去声明一个嵌入, 那么会生成一个(a, b)这样的权重矩阵.
+                这里我们都知道
+                self.trg_word_prj = nn.Linear(d_model, n_trg_vocab), 
+                所以trg_word_prj.weight.shape == (n_trg_vocab, d_model)
+                self.decoder.trg_word_emb = nn.Embedding(n_trg_vocab, d_model)
+                所以self.decoder.trg_word_emb.shape == (n_trg_vocab, d_model)
+                因此share后并不会影响到shape.
+
+                2. 为什么要这样share呢？原本的trg_word_emb.weight可以看成是一个嵌入向量的保存矩阵, 
+                每一个词语(表示成数字下标),可以在相应位置取出自己对应的嵌入向量. 而trg_word_prj的目的是
+                将隐藏层向量投影到n_trg_vocab(也即字典中的词语)中. 在计算时是xA.T[(batch, d_model) x (d_model, n_trg_vocab)], 
+                也即类似通过计算两个d_model向量的余弦相似度来判断当前的嵌入向量和哪个词语对应向量比较像, 
+                越像, 则词语对应位置([0, n_trg_vocab))权重越大. 
+            """
             self.trg_word_prj.weight = self.decoder.trg_word_emb.weight
             self.x_logit_scale = (d_model ** -0.5)
 
@@ -163,12 +183,16 @@ class Transformer(nn.Module):
 
     def forward(self, src_seq, trg_seq):
         
-        # 将进行attention权值矩阵计算的时候填上缺省值处的词语所产生的权重忽略,以去除噪声.
+        """
+        将进行attention权值矩阵计算的时候填上缺省值处的词语所产生的权重忽略,以去除噪声.
+        """
         src_mask = get_pad_mask(src_seq, self.src_pad_idx)
         
-        # 在生成单词时, 对于计算第i个单词的attention矩阵, 我们只能将前i个单词的信息提供给它.
-        # 要将i + 1之后的单词所产生的信息忽略, 这样才合理.
-        # 所以通过 & 来构造一个下三角矩阵, 在忽略i + 1之后单词的同时, 也只关注语句中的非缺省信息.
+        """
+        在生成单词时, 对于计算第i个单词的attention矩阵, 我们只能将前i个单词的信息提供给它.
+        要将i + 1之后的单词所产生的信息忽略, 这样才合理.
+        所以通过 & 来构造一个下三角矩阵, 在忽略i + 1之后单词的同时, 也只关注语句中的非缺省信息.
+        """
         trg_mask = get_pad_mask(trg_seq, self.trg_pad_idx) & get_subsequent_mask(trg_seq)
 
         enc_output, *_ = self.encoder(src_seq, src_mask)
